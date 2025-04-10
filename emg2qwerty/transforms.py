@@ -11,7 +11,7 @@ from typing import Any, TypeVar
 import numpy as np
 import torch
 import torchaudio
-
+from scipy import signal
 
 TTransformIn = TypeVar("TTransformIn")
 TTransformOut = TypeVar("TTransformOut")
@@ -243,3 +243,52 @@ class SpecAugment:
 
         # (..., C, freq, T) -> (T, ..., C, freq)
         return x.movedim(-1, 0)
+
+
+def butter_highpass_filter(data, cutoff, nyq, order=5):
+    """Butterworth high-pass filter."""
+    normal_cutoff = cutoff / nyq  # normalized cutoff frequency
+    b, a = signal.butter(order, normal_cutoff, btype='high', analog=False)
+    filtered_data = signal.filtfilt(b, a, data)
+    return filtered_data
+
+def butter_lowpass_filter(data, cutoff, nyq, order=5):
+    """Butterworth low-pass filter."""
+    normal_cutoff = cutoff / nyq  # normalized cutoff frequency
+    b, a = signal.butter(order, normal_cutoff, btype='low', analog=False)
+    filtered_data = signal.filtfilt(b, a, data)
+    return filtered_data
+
+@dataclass
+class BandPassFilter:
+    """Applies a bandpass filter to the input data using Butterworth high-pass and low-pass filters.
+    
+    Args:
+        cutoff_high (float): The cutoff frequency for the high-pass filter.
+        cutoff_low (float): The cutoff frequency for the low-pass filter.
+        fps (int): Sampling frequency of the input data (in Hz).
+        order_high (int): The order of the high-pass filter (default: 5).
+        order_low (int): The order of the low-pass filter (default: 5).
+    """
+    cutoff_high: float = 40.0
+    cutoff_low: float = 500.0
+    fps: int = 2000
+    order_high: int = 5
+    order_low: int = 4
+
+    def __post_init__(self):
+        self.nyq = 0.5 * self.fps  # Nyquist frequency
+
+    def __call__(self, data: torch.Tensor) -> torch.Tensor:
+        """Applies the bandpass filter to the input data."""
+        # Ensure the input is in the form of a numpy array
+        data = data.numpy()
+        # Apply high-pass filter first
+        filtered_high = np.apply_along_axis(
+            butter_highpass_filter, 0, data, self.cutoff_high, self.nyq, self.order_high
+        )
+        # Apply low-pass filter second
+        filtered_low = np.apply_along_axis(
+            butter_lowpass_filter, 0, filtered_high, self.cutoff_low, self.nyq, self.order_low
+        )
+        return torch.tensor(filtered_low, dtype=torch.float32)
