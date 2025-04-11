@@ -11,7 +11,7 @@ from typing import Any, TypeVar
 import numpy as np
 import torch
 import torchaudio
-from scipy import signal
+
 
 TTransformIn = TypeVar("TTransformIn")
 TTransformOut = TypeVar("TTransformOut")
@@ -262,7 +262,7 @@ def butter_lowpass_filter(data, cutoff, nyq, order=5):
 @dataclass
 class BandPassFilter:
     """Applies a bandpass filter to the input data using Butterworth high-pass and low-pass filters.
-    
+
     Args:
         cutoff_high (float): The cutoff frequency for the high-pass filter.
         cutoff_low (float): The cutoff frequency for the low-pass filter.

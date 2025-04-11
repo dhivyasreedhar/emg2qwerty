@@ -3,6 +3,8 @@
 #
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
+import sys
+print("PYTHONPATH:", sys.path)
 
 import logging
 import os
@@ -13,6 +15,8 @@ from typing import Any
 
 import hydra
 import pytorch_lightning as pl
+from pytorch_lightning.utilities.model_summary import ModelSummary
+
 from hydra.utils import get_original_cwd, instantiate
 from omegaconf import DictConfig, ListConfig, OmegaConf
 
@@ -70,6 +74,10 @@ def main(config: DictConfig):
             lr_scheduler=config.lr_scheduler,
             decoder=config.decoder,
         )
+        
+    # Print model summary: layer names, output shapes, and parameter counts.
+    model_summary = ModelSummary(module, max_depth=-1)
+    print(model_summary)
 
     # Instantiate LightningDataModule
     log.info(f"Instantiating LightningDataModule {config.datamodule}")
@@ -122,7 +130,30 @@ def main(config: DictConfig):
         "best_checkpoint": trainer.checkpoint_callback.best_model_path,
     }
     pprint.pprint(results, sort_dicts=False)
+    
+        # === OPTIONAL: Visualize positional encoding (only if it exists) ===
+    import matplotlib.pyplot as plt
 
+    try:
+        if hasattr(module, "positional_encoding") and hasattr(module.positional_encoding, "pe"):
+            pe = module.positional_encoding.pe  # shape: (max_len, 1, d_model)
+            pe = pe.squeeze(1).cpu().numpy()    # (max_len, d_model)
+
+            T = 622  # your expected input sequence length
+            d_model = pe.shape[1]
+
+            plt.figure(figsize=(12, 6))
+            plt.imshow(pe[:T].T, aspect='auto', cmap='viridis')
+            plt.colorbar(label='Encoding Value')
+            plt.title(f"Sinusoidal Positional Encoding (T={T}, d_model={d_model})")
+            plt.xlabel("Time step (T)")
+            plt.ylabel("Feature Dimension")
+            plt.tight_layout()
+            plt.show()
+        else:
+            log.warning("No positional encoding found in model. Skipping visualization.")
+    except Exception as e:
+        log.error(f"Error during positional encoding visualization: {e}")
 
 if __name__ == "__main__":
     OmegaConf.register_new_resolver("cpus_per_task", utils.cpus_per_task)

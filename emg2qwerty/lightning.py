@@ -25,6 +25,8 @@ from emg2qwerty.modules import (
     MultiBandRotationInvariantMLP,
     SpectrogramNorm,
     TDSConvEncoder,
+    SimpleTransformerEncoder,
+    PositionalEncoding
 )
 from emg2qwerty.transforms import Transform
 
@@ -150,11 +152,23 @@ class TDSConvCTCModule(pl.LightningModule):
         optimizer: DictConfig,
         lr_scheduler: DictConfig,
         decoder: DictConfig,
+        ### NEW ARGS for Transformer - start
+        transformer: DictConfig, # New transformer config group
+        positional_encoding: DictConfig
+        ### NEW ARGS for Transformer - end
     ) -> None:
         super().__init__()
         self.save_hyperparameters()
 
         num_features = self.NUM_BANDS * mlp_features[-1]
+        self.d_model = num_features 
+        ### NEW ARGS for Transformer - start
+        # self.proj_to_dmodel = None
+        # if num_features != d_model:
+        #     print("The shape of your num_features does not match the one of d_model.")
+        #     self.proj_to_dmodel = nn.Linear(num_features, d_model)
+        #     print("Successfully projected num_features to d_model!")
+        # ### NEW ARGS for Transformer - end
 
         # Model
         # inputs: (T, N, bands=2, electrode_channels=16, freq)
@@ -174,17 +188,29 @@ class TDSConvCTCModule(pl.LightningModule):
                 block_channels=block_channels,
                 kernel_width=kernel_width,
             ),
-            # (T, N, num_classes)
-            nn.Linear(num_features, charset().num_classes),
-            nn.LogSoftmax(dim=-1),
+            # (T, N, num_classes) 
+            # nn.Linear(num_features, charset().num_classes), # commented out due to introduce of transformer 
+            # nn.LogSoftmax(dim=-1), # commented out due to introduce of transformer 
         )
-
+        ### NEW ARGS for Transformer - start
+        # Insert the Transformer
+        
+        self.positional_encoding = PositionalEncoding(self.d_model)
+        
+        self.transformer = SimpleTransformerEncoder(
+            d_model=self.d_model,
+            nhead=transformer.nhead,
+            num_layers=transformer.num_layers,
+            dim_feedforward=transformer.dim_feedforward,  # optional
+        )
+        # Final classification layer
+        self.output_layer = nn.Linear(self.d_model, charset().num_classes)
+        self.log_softmax = nn.LogSoftmax(dim=-1)
+        ### NEW ARGS for Transformer - end
         # Criterion
         self.ctc_loss = nn.CTCLoss(blank=charset().null_class)
-
         # Decoder
         self.decoder = instantiate(decoder)
-
         # Metrics
         metrics = MetricCollection([CharacterErrorRates()])
         self.metrics = nn.ModuleDict(
@@ -194,8 +220,49 @@ class TDSConvCTCModule(pl.LightningModule):
             }
         )
 
-    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        return self.model(inputs)
+    def forward(self, inputs: torch.Tensor, is_causal=True) -> torch.Tensor:
+        # Only print debug info on the first forward call
+        debug = not hasattr(self, "_debug_printed")
+        if debug:
+            print("Input shape:", inputs.shape)
+
+        x = inputs
+        for idx, layer in enumerate(self.model):
+            if debug:
+                print(f"Before layer {idx} ({layer.__class__.__name__}): {x.shape}")
+            x = layer(x)
+            if debug:
+                print(f"After layer {idx} ({layer.__class__.__name__}): {x.shape}")
+
+        if debug:
+            print("Before positional encoding:", x.shape)
+        x = self.positional_encoding(x)    
+        if debug:
+            print("After positional encoding:", x.shape)
+        if debug:
+            print("Before transformer:", x.shape)
+        x = self.transformer(x, is_causal=True)
+        if debug:
+            print("After transformer:", x.shape)
+
+        if debug:
+            print("Before output layer:", x.shape)
+        x = self.output_layer(x)
+        if debug:
+            print("After output layer:", x.shape)
+
+        if debug:
+            print("Before log softmax:", x.shape)
+        x = self.log_softmax(x)
+        if debug:
+            print("After log softmax:", x.shape)
+            # Set flag to avoid printing in subsequent calls
+            self._debug_printed = True
+
+        return x
+
+        ### NEW ARGS for Transformer - end
+
 
     def _step(
         self, phase: str, batch: dict[str, torch.Tensor], *args, **kwargs

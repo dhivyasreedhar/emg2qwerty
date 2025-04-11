@@ -278,3 +278,43 @@ class TDSConvEncoder(nn.Module):
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         return self.tds_conv_blocks(inputs)  # (T, N, num_features)
+
+class SimpleTransformerEncoder(nn.Module):
+    def __init__(self, d_model: int, nhead: int, num_layers: int, dim_feedforward: int=2048):
+        super().__init__()
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=d_model,
+            nhead=nhead,
+            dim_feedforward=dim_feedforward,
+            batch_first=True  # PyTorch default for Transformer is (S, N, E)
+        )
+        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+
+    def forward(self, x: torch.Tensor, is_causal: bool = False) -> torch.Tensor:
+        # x shape: (T', N, d_model)
+        # Make sure x is in (time, batch, embedding) = (T', N, d_model)
+        out = self.transformer(x)  # remains (T', N, d_model)
+        return out
+    
+from torch import nn
+import math
+
+# Positional encoding (fixed sinusoidal)
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model, max_len=1000):
+        super().__init__()
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float32).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+
+        pe = pe.unsqueeze(1)  # (max_len, 1, d_model) for broadcasting
+        self.register_buffer('pe', pe)
+
+    def forward(self, x):
+        # x shape: (T, N, d_model)
+        seq_len = x.size(0)
+        return x + self.pe[:seq_len]
+

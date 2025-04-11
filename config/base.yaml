@@ -5,6 +5,8 @@ defaults:
   - optimizer: adam
   - lr_scheduler: linear_warmup_cosine_annealing
   - decoder: ctc_greedy
+  - positional_encoding: pos_enc
+  - transformer: simple_transformer  # This file contains the transformer parameters
   - cluster: local
   - _self_
 
@@ -20,7 +22,7 @@ trainer:
   accelerator: gpu
   devices: 1
   num_nodes: 1
-  max_epochs: 150
+  max_epochs: 10
   default_root_dir: ${hydra:runtime.output_dir}
 
 callbacks:
