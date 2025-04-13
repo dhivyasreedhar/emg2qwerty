@@ -11,6 +11,7 @@ from typing import Any, TypeVar
 import numpy as np
 import torch
 import torchaudio
+from scipy import signal
 
 
 TTransformIn = TypeVar("TTransformIn")
