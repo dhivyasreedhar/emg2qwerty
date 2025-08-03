@@ -1,0 +1,14 @@
+
+  _target_: emg2qwerty.wordlm_decoder.WordLMBeamDecoder
+  beam_size: 50
+  max_labels_per_timestep: 10
+  lm_path: null
+  lm_weight: 2.0
+  insertion_bonus: 2.0
+  delete_key: "Key.backspace"
+  use_word_lm: true
+  word_lm_model: "gpt2"
+  word_lm_weight: 0.8
+  word_bonus: 2.0
+  verbose: true
+  debug: false
